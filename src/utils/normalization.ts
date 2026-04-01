@@ -104,8 +104,8 @@ export function parseJSONCreateTime(createTimeStr: string | undefined | null): D
   const second = parseInt(match[6]);
   
   // Convert UTC to MT5 Server Time (UTC+2 winter, UTC+3 summer)
-  // Summer starts March 8th. We assume it ends Nov 1st.
-  const isSummer = (month > 3 || (month === 3 && day >= 8)) && (month < 11);
+  // Summer starts after March 8th.
+  const isSummer = (month > 3 || (month === 3 && day > 8)) && (month < 11);
   const offsetHours = isSummer ? 3 : 2;
   
   const dt = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
@@ -117,6 +117,31 @@ export function parseJSONCreateTime(createTimeStr: string | undefined | null): D
     day: dt.getUTCDate(),
     hour: dt.getUTCHours()
   };
+}
+
+export function convertCreateTime(createTimeStr: string | undefined | null): string | null {
+  if (!createTimeStr) return null;
+  const match = createTimeStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+  if (!match) return null;
+  
+  const year = parseInt(match[1]);
+  const month = parseInt(match[2]);
+  const day = parseInt(match[3]);
+  const hour = parseInt(match[4]);
+  const minute = parseInt(match[5]);
+  const second = parseInt(match[6]);
+  
+  // Convert UTC to MT5 Server Time (UTC+2 winter, UTC+3 summer)
+  // Summer starts after March 8th.
+  const isSummer = (month > 3 || (month === 3 && day > 8)) && (month < 11);
+  const offsetHours = isSummer ? 3 : 2;
+  
+  const dt = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  dt.setUTCHours(dt.getUTCHours() + offsetHours);
+  
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())} ${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:${pad(dt.getUTCSeconds())}`;
 }
 
 export function parseCSVDate(dateStr: string | undefined | null): DateInfo | null {

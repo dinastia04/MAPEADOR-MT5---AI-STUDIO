@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { MappingResult } from '../types';
 import { Download, RefreshCcw, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
-import { parseNumber, createOpKey } from '../utils/normalization';
+import { parseNumber, createOpKey, convertCreateTime } from '../utils/normalization';
 
 interface DashboardProps {
   result: MappingResult;
@@ -64,6 +64,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
         'PNL (CSV)': parseNumber(csv['PNL']),
         'Comision (CSV)': parseNumber(csv['Comision']),
         'Swap (CSV)': parseNumber(csv['Swap']),
+        'createTime (JSON)': json.createTime,
+        'Hora Convertida (createTime)': convertCreateTime(json.createTime),
       };
     });
     const ws1 = XLSX.utils.json_to_sheet(matchedData);
@@ -128,6 +130,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
       if (flatOp.entry !== undefined) flatOp.entry = parseNumber(flatOp.entry);
       if (flatOp.takeProfit !== undefined) flatOp.takeProfit = parseNumber(flatOp.takeProfit);
       if (flatOp.stopLoss !== undefined) flatOp.stopLoss = parseNumber(flatOp.stopLoss);
+      
+      flatOp['Hora Convertida (createTime)'] = convertCreateTime(flatOp.createTime);
+      
       return flatOp;
     });
     const ws2 = XLSX.utils.json_to_sheet(unmatchedJSONData);
@@ -168,6 +173,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
       if (flatOp.entry !== undefined) flatOp.entry = parseNumber(flatOp.entry);
       if (flatOp.takeProfit !== undefined) flatOp.takeProfit = parseNumber(flatOp.takeProfit);
       if (flatOp.stopLoss !== undefined) flatOp.stopLoss = parseNumber(flatOp.stopLoss);
+      
+      flatOp['Hora Convertida (createTime)'] = convertCreateTime(flatOp.createTime);
+      
       return flatOp;
     });
     const ws4 = XLSX.utils.json_to_sheet(allJSONData);
