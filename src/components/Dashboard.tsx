@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { MappingResult } from '../types';
-import { Download, RefreshCcw, ArrowRight } from 'lucide-react';
+import { Download, RefreshCcw, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
-import { parseNumber } from '../utils/normalization';
+import { parseNumber, createOpKey } from '../utils/normalization';
 
 interface DashboardProps {
   result: MappingResult;
@@ -15,8 +15,24 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
+  const [isTableExpanded, setIsTableExpanded] = useState(false);
+
   const downloadExcel = () => {
     const wb = XLSX.utils.book_new();
+
+    const applyGlobalStyles = (ws: XLSX.WorkSheet) => {
+      const range = XLSX.utils.decode_range(ws['!ref'] || "A1:A1");
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+          ws[cellAddress].s = {
+            ...(ws[cellAddress].s || {}),
+            alignment: { horizontal: "center", vertical: "center" }
+          };
+        }
+      }
+    };
 
     // Sheet 1: Matched
     const matchedData = result.matchedPairs.map(pair => {
@@ -35,7 +51,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
         'SL (CSV)': pair.csv_op.sl,
         'Comentario (JSON)': pair.json_op.comment,
         'Comentario (CSV)': pair.csv_op.comment,
-        'Confianza (%)': pair.score,
+        'Confianza (JSON)': pair.json_op.confianza,
+        'Confianza (CSV)': pair.csv_op.confianza,
+        'Score Mapeo (%)': pair.score,
         'Razones': pair.reasons.join('; '),
         'ID (JSON)': json.id,
         'ID Orden (CSV)': csv['ID Orden'],
@@ -76,6 +94,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
         colColor = "FCE4D6"; // Light red/orange
       } else if (headerText.includes("Comentario")) {
         colColor = "FFF2CC"; // Light yellow
+      } else if (headerText.includes("Confianza")) {
+        colColor = "E2EFDA"; // Light green
       }
 
       // Apply color to the entire column if a color was determined
@@ -98,19 +118,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
       colWidths.push({ wch: 15 }); // Default width
     }
     ws1['!cols'] = colWidths;
+    applyGlobalStyles(ws1);
 
     XLSX.utils.book_append_sheet(wb, ws1, "OPERACIONES MAPEADAS");
 
     // Sheet 2: Unmatched JSON
     const unmatchedJSONData = result.unmatchedJSON.map(({ op }) => {
       const flatOp: Record<string, any> = { ...op.original };
-      if (flatOp.Confianza !== undefined) flatOp.Confianza = parseNumber(flatOp.Confianza);
       if (flatOp.entry !== undefined) flatOp.entry = parseNumber(flatOp.entry);
       if (flatOp.takeProfit !== undefined) flatOp.takeProfit = parseNumber(flatOp.takeProfit);
       if (flatOp.stopLoss !== undefined) flatOp.stopLoss = parseNumber(flatOp.stopLoss);
       return flatOp;
     });
     const ws2 = XLSX.utils.json_to_sheet(unmatchedJSONData);
+    applyGlobalStyles(ws2);
     XLSX.utils.book_append_sheet(wb, ws2, "NO MAPEADOS JSON");
 
     // Sheet 3: Unmatched CSV
@@ -131,10 +152,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
         'PNL': parseNumber(orig['PNL']),
         'Comision': parseNumber(orig['Comision']),
         'Swap': parseNumber(orig['Swap']),
+        'Confianza (CSV)': op.confianza,
         'Comentario': op.comment
       };
     });
     const ws3 = XLSX.utils.json_to_sheet(unmatchedCSVData);
+    applyGlobalStyles(ws3);
     XLSX.utils.book_append_sheet(wb, ws3, "NO MAPEADOS CSV");
 
     // Sheet 4: All JSON
@@ -142,13 +165,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
       // Create a flat object with all properties
       const flatOp: Record<string, any> = { ...op };
       // Parse known numerical fields if they exist
-      if (flatOp.Confianza !== undefined) flatOp.Confianza = parseNumber(flatOp.Confianza);
       if (flatOp.entry !== undefined) flatOp.entry = parseNumber(flatOp.entry);
       if (flatOp.takeProfit !== undefined) flatOp.takeProfit = parseNumber(flatOp.takeProfit);
       if (flatOp.stopLoss !== undefined) flatOp.stopLoss = parseNumber(flatOp.stopLoss);
       return flatOp;
     });
     const ws4 = XLSX.utils.json_to_sheet(allJSONData);
+    applyGlobalStyles(ws4);
     XLSX.utils.book_append_sheet(wb, ws4, "TODAS JSON");
 
     // Sheet 5: All CSV
@@ -162,9 +185,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
       if (flatOp['PNL'] !== undefined) flatOp['PNL'] = parseNumber(flatOp['PNL']);
       if (flatOp['Comision'] !== undefined) flatOp['Comision'] = parseNumber(flatOp['Comision']);
       if (flatOp['Swap'] !== undefined) flatOp['Swap'] = parseNumber(flatOp['Swap']);
+      
+      const normalizedOp = createOpKey(op, 'csv');
+      
+      // Remove original Comentario to re-add it after Confianza
+      delete flatOp['Comentario'];
+      
+      flatOp['Confianza (CSV)'] = normalizedOp.confianza;
+      flatOp['Comentario'] = normalizedOp.comment;
+      
       return flatOp;
     });
     const ws5 = XLSX.utils.json_to_sheet(allCSVData);
+    applyGlobalStyles(ws5);
     XLSX.utils.book_append_sheet(wb, ws5, "TODAS CSV");
 
     // Sheet 6: Summary
@@ -186,6 +219,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
       ["% Mapeo sobre CSV total", result.summary.csvMatchPercent],
     ];
     const ws6 = XLSX.utils.aoa_to_sheet(summaryData);
+    applyGlobalStyles(ws6);
     XLSX.utils.book_append_sheet(wb, ws6, "RESUMEN");
 
     XLSX.writeFile(wb, `[${result.summary.matchedCount} OPS] [MT5-AI STUDIO].xlsx`);
@@ -251,12 +285,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
 
       {/* Results Table */}
       <div className="bg-[#0A0A0A] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
-        <div className="px-6 py-5 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
-          <h3 className="text-base font-medium text-white">Mapeos de Alta Confianza</h3>
+        <button 
+          onClick={() => setIsTableExpanded(!isTableExpanded)}
+          className="w-full px-6 py-5 border-b border-white/10 flex justify-between items-center bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
+        >
+          <div className="flex items-center gap-3">
+            {isTableExpanded ? <ChevronDown className="w-5 h-5 text-zinc-400" /> : <ChevronRight className="w-5 h-5 text-zinc-400" />}
+            <h3 className="text-base font-medium text-white">Mapeos de Alta Confianza</h3>
+          </div>
           <span className="px-2.5 py-1 rounded-md bg-white/5 text-zinc-400 text-xs font-mono">Top 100</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse whitespace-nowrap">
+        </button>
+        
+        {isTableExpanded && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead>
               <tr className="border-b border-white/10 text-[11px] font-semibold text-zinc-500 uppercase tracking-wider bg-[#050505]">
                 <th className="px-6 py-4">Símbolo</th>
@@ -264,7 +306,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
                 <th className="px-6 py-4 text-right">Entrada (JSON / CSV)</th>
                 <th className="px-6 py-4 text-right">TP (JSON / CSV)</th>
                 <th className="px-6 py-4 text-right">SL (JSON / CSV)</th>
-                <th className="px-6 py-4 text-center">Confianza</th>
+                <th className="px-6 py-4 text-center">Score Mapeo</th>
+                <th className="px-6 py-4 text-center">Confianza (JSON)</th>
+                <th className="px-6 py-4 text-center">Confianza (CSV)</th>
                 <th className="px-6 py-4">Razones del Mapeo</th>
               </tr>
             </thead>
@@ -306,6 +350,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
                       </div>
                     </div>
                   </td>
+                  <td className="px-6 py-4 text-center font-mono text-xs text-zinc-400">
+                    {pair.json_op.confianza || '-'}
+                  </td>
+                  <td className="px-6 py-4 text-center font-mono text-xs text-zinc-400">
+                    {pair.csv_op.confianza || '-'}
+                  </td>
                   <td className="px-6 py-4 text-[11px] text-zinc-500 max-w-[250px] truncate group-hover:whitespace-normal group-hover:bg-[#111111] group-hover:relative group-hover:z-10 group-hover:shadow-2xl group-hover:border group-hover:border-white/10 group-hover:rounded-lg group-hover:p-4 group-hover:-ml-4 group-hover:-mt-2 transition-all">
                     {pair.reasons.join(' · ')}
                   </td>
@@ -314,6 +364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onReset }) => {
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );

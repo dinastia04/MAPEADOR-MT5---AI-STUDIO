@@ -12,6 +12,7 @@ export interface JSONOperation {
   type: string;
   comentario: string;
   Confianza?: string;
+  createTime?: string;
 }
 
 export interface CSVOperation {
@@ -35,6 +36,13 @@ export interface CSVOperation {
   "Comentario": string;
 }
 
+export interface DateInfo {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+}
+
 export interface NormalizedOp {
   symbol: string;
   entry: number | null;
@@ -45,6 +53,8 @@ export interface NormalizedOp {
   compositeKey: string;
   words: Set<string>;
   original: any;
+  dateInfo: DateInfo | null;
+  confianza: string | null;
 }
 
 export interface MatchedPair {

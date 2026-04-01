@@ -99,8 +99,10 @@ export function performMatching(jsonOps: any[], csvOps: any[]): MappingResult {
   const matchedCsvIdx = new Set<number>();
 
   // PASO 1: Lógica estricta solicitada por el usuario
-  // 1. Filtro por llave compuesta (coincidencia parcial del comentario sin signos/espacios)
-  // 2. Filtro por TP exacto
+  // 1. Filtro por Fecha y Hora (UTC traducido a MT5 Server Time)
+  // 2. Filtro por llave compuesta (comentario)
+  // 3. Filtro por Confianza (si existe)
+  // 4. Filtro por TP exacto
   for (let j = 0; j < jsonKeys.length; j++) {
     if (matchedJsonIdx.has(j)) continue;
     const jsonOp = jsonKeys[j];
@@ -109,76 +111,85 @@ export function performMatching(jsonOps: any[], csvOps: any[]): MappingResult {
     let bestScore = 0;
     let bestReasons: string[] = [];
 
-    // Filtrar CSVs por coincidencia parcial de la llave compuesta
     const candidateCsvs = [];
+    
+    // Filtrar CSVs por Fecha y Hora
     for (let c = 0; c < csvKeys.length; c++) {
       if (matchedCsvIdx.has(c)) continue;
       const csvOp = csvKeys[c];
 
+      // Filtro de Fecha y Hora
+      if (!jsonOp.dateInfo || !csvOp.dateInfo) {
+        continue; // Faltan datos de fecha/hora
+      }
+      
+      if (jsonOp.dateInfo.year !== csvOp.dateInfo.year ||
+          jsonOp.dateInfo.month !== csvOp.dateInfo.month ||
+          jsonOp.dateInfo.day !== csvOp.dateInfo.day ||
+          jsonOp.dateInfo.hour !== csvOp.dateInfo.hour) {
+        continue; // No coincide la fecha/hora
+      }
+
       const jsonKey = jsonOp.compositeKey;
       const csvKey = csvOp.compositeKey;
 
-      // Si el CSV tiene una llave válida y está contenida en la del JSON (o viceversa)
+      // Filtro de Comentario
+      let commentMatch = false;
       if (jsonKey && csvKey && csvKey.length > 2) {
         if (jsonKey.includes(csvKey) || csvKey.includes(jsonKey)) {
-          candidateCsvs.push({ idx: c, op: csvOp });
+          commentMatch = true;
         }
+      }
+
+      // Filtro de Confianza
+      let confianzaMatch = true;
+      if (jsonOp.confianza) {
+        if (!csvOp.confianza) {
+          confianzaMatch = false;
+        } else {
+          const jsonConfStr = jsonOp.confianza.replace('%', '');
+          const csvConfStr = csvOp.confianza.replace('%', '');
+          if (jsonConfStr !== csvConfStr) {
+            confianzaMatch = false;
+          }
+        }
+      }
+
+      if (commentMatch && confianzaMatch) {
+        candidateCsvs.push({ idx: c, op: csvOp });
       }
     }
 
-    // De los candidatos (decenas), filtrar por TP
+    // De los candidatos filtrados por Fecha/Hora y Comentario, filtrar por TP
     for (const candidate of candidateCsvs) {
       const csvOp = candidate.op;
+      
+      let tpMatch = false;
       if (jsonOp.tp !== null && csvOp.tp !== null) {
         const tpDiff = Math.abs(jsonOp.tp - csvOp.tp);
         if (tpDiff < 0.0001) {
-          bestCsvIdx = candidate.idx;
-          bestScore = 100;
-          bestReasons = [
-            `Llave compuesta parcial: "${csvOp.compositeKey}"`,
-            `TP exacto: ${jsonOp.tp}`
-          ];
-          break; // Encontramos el match perfecto
+          tpMatch = true;
         }
+      } else if (jsonOp.tp === null && csvOp.tp === null) {
+        tpMatch = true;
+      }
+
+      if (tpMatch) {
+        bestCsvIdx = candidate.idx;
+        bestScore = 100;
+        bestReasons = [
+          `Fecha/Hora coinciden`,
+          `Llave compuesta parcial: "${csvOp.compositeKey}"`,
+          `TP exacto: ${jsonOp.tp !== null ? jsonOp.tp : 'N/A'}`
+        ];
+        if (jsonOp.confianza) {
+          bestReasons.push(`Confianza verificada: ${jsonOp.confianza}`);
+        }
+        break; // Encontramos el match perfecto
       }
     }
 
     if (bestCsvIdx !== -1) {
-      matchedPairs.push({
-        json_idx: j,
-        csv_idx: bestCsvIdx,
-        json_op: jsonOp,
-        csv_op: csvKeys[bestCsvIdx],
-        score: bestScore,
-        reasons: bestReasons
-      });
-      matchedJsonIdx.add(j);
-      matchedCsvIdx.add(bestCsvIdx);
-    }
-  }
-
-  // PASO 2: Fallback (Opcional, para los que no pasaron el filtro estricto pero son muy similares)
-  // Usamos el calculateMatchScore original pero exigimos un puntaje alto (ej. >= 60)
-  for (let j = 0; j < jsonKeys.length; j++) {
-    if (matchedJsonIdx.has(j)) continue;
-    const jsonOp = jsonKeys[j];
-
-    let bestCsvIdx = -1;
-    let bestScore = 0;
-    let bestReasons: string[] = [];
-
-    for (let c = 0; c < csvKeys.length; c++) {
-      if (matchedCsvIdx.has(c)) continue;
-
-      const { score, reasons } = calculateMatchScore(jsonOp, csvKeys[c]);
-      if (score > bestScore) {
-        bestScore = score;
-        bestCsvIdx = c;
-        bestReasons = reasons;
-      }
-    }
-
-    if (bestScore >= 60) {
       matchedPairs.push({
         json_idx: j,
         csv_idx: bestCsvIdx,
